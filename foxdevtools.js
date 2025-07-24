@@ -39,7 +39,7 @@ javascript:(function(){
     const css = `
       /* Estilos base */
       .fox-devtools {
-        --primary-color: #ff6d00;
+        --primary-color: black;
         --primary-dark: #e65100;
         --primary-light: #ff9e40;
         --text-primary: #f5f5f5;
