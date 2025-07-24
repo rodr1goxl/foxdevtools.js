@@ -72,7 +72,7 @@ javascript:(function(){
         right: 20px;
         width: 50px;
         height: 50px;
-        border-radius: 50%;
+        border-radius: 0%;
         background-color: var(--primary-color);
         color: white;
         display: flex;
@@ -104,7 +104,7 @@ javascript:(function(){
         width: 90%;
         max-width: 400px;
         max-height: 70vh;
-        background-color: var(--bg-primary);
+        background-color: black;
         border-radius: var(--border-radius);
         box-shadow: var(--shadow);
         z-index: 99998;
