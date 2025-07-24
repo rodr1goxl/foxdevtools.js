@@ -1,717 +1,1658 @@
-javascript:(function() {
-  'use strict';
+javascript:(function(){
+  if (window.FoxDevTools) return;
 
-  // Configurações globais
-  const config = {
-    primaryColor: '#6a5acd', // Roxo ardósia
-    secondaryColor: '#4682b4', // Azul aço
-    darkBg: '#1a1a1a',
-    lightText: '#ffffff',
-    borderRadius: '12px',
-    shadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-    transition: 'all 0.3s ease'
-  };
-
-  // Estado da aplicação
-  let state = {
-    inspecting: false,
-    consoleOpen: false,
-    autoClicking: false,
-    autoScrolling: false,
-    modifiedElements: []
-  };
-
-  // Elementos da UI
-  const uiElements = {
-    mainButton: null,
-    panel: null,
-    consolePanel: null,
-    inspectOverlay: null
-  };
-
-  // Inicializa a FoxDevTools
-  function initFoxDevTools() {
-    // Verifica se já está carregado para evitar duplicação
-    if (document.getElementById('fox-devtools-root')) return;
-    
-    // Cria o elemento raiz
-    const root = document.createElement('div');
-    root.id = 'fox-devtools-root';
-    document.body.appendChild(root);
-    
-    // Cria os elementos da UI
-    createMainButton();
-    createMainPanel();
-    createConsolePanel();
-    createInspectOverlay();
-    
-    // Adiciona estilos globais
-    addGlobalStyles();
-    
-    console.log('FoxDevTools carregado com sucesso!');
-  }
-
-  // Cria o botão principal flutuante
-  function createMainButton() {
-    const button = document.createElement('button');
-    button.id = 'fox-devtools-main-button';
-    button.innerHTML = '🦊';
-    button.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      background-color: ${config.primaryColor};
-      color: white;
-      border: none;
-      font-size: 24px;
-      cursor: pointer;
-      z-index: 99998;
-      box-shadow: ${config.shadow};
-      transition: ${config.transition};
-    `;
-    
-    button.addEventListener('click', toggleMainPanel);
-    
-    uiElements.mainButton = button;
-    document.getElementById('fox-devtools-root').appendChild(button);
-  }
-
-  // Cria o painel principal
-  function createMainPanel() {
-    const panel = document.createElement('div');
-    panel.id = 'fox-devtools-panel';
-    panel.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      width: 280px;
-      background-color: ${config.darkBg};
-      color: ${config.lightText};
-      border-radius: ${config.borderRadius};
-      padding: 15px;
-      box-shadow: ${config.shadow};
-      z-index: 99999;
-      display: none;
-      transition: ${config.transition};
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    `;
-    
-    panel.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-        <h3 style="margin: 0; color: ${config.primaryColor};">FoxDevTools</h3>
-        <button id="fox-devtools-close-btn" style="background: none; border: none; color: white; font-size: 18px;">×</button>
-      </div>
-      <div style="display: flex; flex-direction: column; gap: 10px;">
-        <button id="fox-inspect-btn" class="fox-btn" style="background-color: ${config.secondaryColor};">
-          <span class="fox-btn-icon">🔍</span> Inspecionar Elementos
-        </button>
-        <button id="fox-console-btn" class="fox-btn">
-          <span class="fox-btn-icon">📋</span> Console
-        </button>
-        <button id="fox-actions-btn" class="fox-btn">
-          <span class="fox-btn-icon">⚡</span> Ações Automáticas
-        </button>
-        <button id="fox-unlock-btn" class="fox-btn">
-          <span class="fox-btn-icon">🔓</span> Desbloquear Site
-        </button>
-        <button id="fox-clear-btn" class="fox-btn" style="background-color: #d9534f;">
-          <span class="fox-btn-icon">🗑️</span> Limpar Alterações
-        </button>
-      </div>
-    `;
-    
-    // Adiciona eventos aos botões
-    panel.querySelector('#fox-inspect-btn').addEventListener('click', toggleInspectMode);
-    panel.querySelector('#fox-console-btn').addEventListener('click', toggleConsole);
-    panel.querySelector('#fox-actions-btn').addEventListener('click', showActionsMenu);
-    panel.querySelector('#fox-unlock-btn').addEventListener('click', unlockSite);
-    panel.querySelector('#fox-clear-btn').addEventListener('click', clearChanges);
-    panel.querySelector('#fox-devtools-close-btn').addEventListener('click', toggleMainPanel);
-    
-    uiElements.panel = panel;
-    document.getElementById('fox-devtools-root').appendChild(panel);
-  }
-
-  // Cria o painel do console
-  function createConsolePanel() {
-    const consolePanel = document.createElement('div');
-    consolePanel.id = 'fox-devtools-console';
-    consolePanel.style.cssText = `
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 200px;
-      background-color: rgba(30, 30, 30, 0.95);
-      color: #e0e0e0;
-      border-top: 2px solid ${config.primaryColor};
-      z-index: 99997;
-      display: none;
-      flex-direction: column;
-      font-family: monospace;
-      overflow: hidden;
-    `;
-    
-    consolePanel.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background-color: rgba(0, 0, 0, 0.2);">
-        <strong>Console</strong>
-        <div>
-          <button id="fox-console-clear" style="margin-right: 8px; background: #555; border: none; color: white; border-radius: 4px; padding: 2px 8px;">Limpar</button>
-          <button id="fox-console-close" style="background: none; border: none; color: white; font-size: 18px;">×</button>
-        </div>
-      </div>
-      <div id="fox-console-content" style="flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 14px;"></div>
-      <div style="display: flex; padding: 8px; background-color: rgba(0, 0, 0, 0.2);">
-        <input id="fox-console-input" type="text" style="flex: 1; padding: 6px; border: 1px solid #555; background: #222; color: white; border-radius: 4px;">
-        <button id="fox-console-send" style="margin-left: 8px; padding: 6px 12px; background: ${config.primaryColor}; border: none; color: white; border-radius: 4px;">Enviar</button>
-      </div>
-    `;
-    
-    // Adiciona eventos
-    consolePanel.querySelector('#fox-console-close').addEventListener('click', toggleConsole);
-    consolePanel.querySelector('#fox-console-clear').addEventListener('click', () => {
-      document.getElementById('fox-console-content').innerHTML = '';
-    });
-    consolePanel.querySelector('#fox-console-send').addEventListener('click', () => {
-      const input = document.getElementById('fox-console-input');
-      if (input.value.trim()) {
-        logToConsole(input.value, 'user');
-        try {
-          const result = eval(input.value);
-          logToConsole(result, 'result');
-        } catch (e) {
-          logToConsole(e.message, 'error');
-        }
-        input.value = '';
+  // Configurações iniciais
+  const FoxDevTools = {
+    version: '1.0.0',
+    initialized: false,
+    settings: {
+      theme: 'dark',
+      autoClickerInterval: null,
+      inspectorMode: false,
+      performanceMetrics: {
+        startTime: performance.now(),
+        domContentLoaded: false,
+        loadTime: false
       }
-    });
-    
-    uiElements.consolePanel = consolePanel;
-    document.getElementById('fox-devtools-root').appendChild(consolePanel);
-  }
+    },
+    elements: {
+      button: null,
+      panel: null,
+      console: null,
+      autoClicker: null,
+      inspector: null,
+      storage: null,
+      tools: null,
+      performance: null,
+      debug: null,
+      shortcuts: null,
+      orientation: null
+    }
+  };
 
-  // Cria overlay para modo de inspeção
-  function createInspectOverlay() {
-    const overlay = document.createElement('div');
-    overlay.id = 'fox-inspect-overlay';
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background-color: rgba(100, 180, 255, 0.2);
-      z-index: 99996;
-      display: none;
-      pointer-events: none;
-    `;
-    
-    uiElements.inspectOverlay = overlay;
-    document.getElementById('fox-devtools-root').appendChild(overlay);
-  }
+  // Salvar no escopo global
+  window.FoxDevTools = FoxDevTools;
 
-  // Adiciona estilos globais
-  function addGlobalStyles() {
-    const style = document.createElement('style');
-    style.textContent = `
-      .fox-btn {
+  // Carregar recursos
+  const loadResources = () => {
+    // CSS
+    const css = `
+      /* Estilos base */
+      .fox-devtools {
+        --primary-color: #ff6d00;
+        --primary-dark: #e65100;
+        --primary-light: #ff9e40;
+        --text-primary: #f5f5f5;
+        --text-secondary: #bdbdbd;
+        --bg-primary: #212121;
+        --bg-secondary: #424242;
+        --bg-tertiary: #616161;
+        --success-color: #4caf50;
+        --error-color: #f44336;
+        --warning-color: #ff9800;
+        --info-color: #2196f3;
+        --border-radius: 4px;
+        --transition: all 0.3s ease;
+        --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        --font-family: 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      }
+
+      .fox-devtools.light {
+        --text-primary: #212121;
+        --text-secondary: #424242;
+        --bg-primary: #f5f5f5;
+        --bg-secondary: #e0e0e0;
+        --bg-tertiary: #bdbdbd;
+      }
+
+      /* Botão flutuante */
+      .fox-devtools-button {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background-color: var(--primary-color);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        box-shadow: var(--shadow);
+        z-index: 99999;
+        border: none;
+        outline: none;
+        transition: var(--transition);
+      }
+
+      .fox-devtools-button:hover {
+        background-color: var(--primary-dark);
+        transform: scale(1.1);
+      }
+
+      .fox-devtools-button img {
+        width: 30px;
+        height: 30px;
+      }
+
+      /* Painel principal */
+      .fox-devtools-panel {
+        position: fixed;
+        bottom: 80px;
+        right: 20px;
+        width: 90%;
+        max-width: 400px;
+        max-height: 70vh;
+        background-color: var(--bg-primary);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        z-index: 99998;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        transition: var(--transition);
+        transform: translateY(20px);
+        opacity: 0;
+        visibility: hidden;
+      }
+
+      .fox-devtools-panel.visible {
+        transform: translateY(0);
+        opacity: 1;
+        visibility: visible;
+      }
+
+      /* Cabeçalho */
+      .fox-devtools-header {
+        padding: 10px 15px;
+        background-color: var(--primary-color);
+        color: white;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-family: var(--font-family);
+        font-weight: bold;
+      }
+
+      .fox-devtools-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .fox-devtools-close {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        font-size: 16px;
+      }
+
+      /* Abas */
+      .fox-devtools-tabs {
+        display: flex;
+        background-color: var(--bg-secondary);
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .fox-devtools-tabs::-webkit-scrollbar {
+        display: none;
+      }
+
+      .fox-devtools-tab {
+        padding: 10px 15px;
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-family: var(--font-family);
+        font-size: 14px;
+        white-space: nowrap;
+        border-bottom: 2px solid transparent;
+        transition: var(--transition);
+      }
+
+      .fox-devtools-tab.active {
+        color: var(--text-primary);
+        border-bottom: 2px solid var(--primary-color);
+      }
+
+      /* Conteúdo */
+      .fox-devtools-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 15px;
+        font-family: var(--font-family);
+        color: var(--text-primary);
+      }
+
+      /* Estilos comuns para seções */
+      .fox-devtools-section {
+        margin-bottom: 20px;
+      }
+
+      .fox-devtools-section-title {
+        margin-bottom: 10px;
+        font-size: 16px;
+        font-weight: bold;
+        color: var(--primary-color);
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 10px 15px;
-        background-color: #333;
+      }
+
+      .fox-devtools-input-group {
+        margin-bottom: 15px;
+      }
+
+      .fox-devtools-label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 14px;
+        color: var(--text-primary);
+      }
+
+      .fox-devtools-input {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: var(--border-radius);
+        border: 1px solid var(--bg-tertiary);
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+        font-family: var(--font-family);
+        font-size: 14px;
+        transition: var(--transition);
+      }
+
+      .fox-devtools-input:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 2px rgba(255, 109, 0, 0.2);
+      }
+
+      .fox-devtools-button-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .fox-devtools-button-primary {
+        background-color: var(--primary-color);
         color: white;
         border: none;
-        border-radius: ${config.borderRadius};
+        padding: 8px 15px;
+        border-radius: var(--border-radius);
         cursor: pointer;
-        transition: ${config.transition};
+        font-family: var(--font-family);
         font-size: 14px;
+        transition: var(--transition);
+        flex: 1;
       }
-      .fox-btn:hover {
-        opacity: 0.9;
+
+      .fox-devtools-button-primary:hover {
+        background-color: var(--primary-dark);
       }
-      .fox-btn-icon {
-        font-size: 16px;
+
+      .fox-devtools-button-secondary {
+        background-color: var(--bg-tertiary);
+        color: var(--text-primary);
+        border: none;
+        padding: 8px 15px;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        font-family: var(--font-family);
+        font-size: 14px;
+        transition: var(--transition);
+        flex: 1;
       }
-      #fox-inspect-overlay.highlight {
-        pointer-events: auto;
-        background-color: rgba(100, 180, 255, 0.3);
-        outline: 2px dashed ${config.primaryColor};
+
+      .fox-devtools-button-secondary:hover {
+        background-color: var(--bg-secondary);
       }
-      .element-info-modal {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background-color: ${config.darkBg};
+
+      .fox-devtools-button-danger {
+        background-color: var(--error-color);
         color: white;
-        border-radius: ${config.borderRadius};
-        padding: 15px;
-        width: 80%;
-        max-width: 300px;
-        z-index: 100000;
-        box-shadow: ${config.shadow};
+        border: none;
+        padding: 8px 15px;
+        border-radius: var(--border-radius);
+        cursor: pointer;
+        font-family: var(--font-family);
+        font-size: 14px;
+        transition: var(--transition);
+        flex: 1;
       }
-      .element-info-modal h3 {
-        margin-top: 0;
-        color: ${config.primaryColor};
-        border-bottom: 1px solid #444;
-        padding-bottom: 8px;
+
+      .fox-devtools-button-danger:hover {
+        background-color: #d32f2f;
       }
-      .element-info-content {
-        margin-bottom: 15px;
-        max-height: 200px;
+
+      /* Console */
+      .fox-devtools-console-output {
+        height: 200px;
         overflow-y: auto;
+        background-color: var(--bg-secondary);
+        border-radius: var(--border-radius);
+        padding: 10px;
+        margin-bottom: 10px;
         font-family: monospace;
         font-size: 13px;
       }
-      .element-actions {
+
+      .fox-devtools-console-entry {
+        margin-bottom: 5px;
+        padding-bottom: 5px;
+        border-bottom: 1px solid var(--bg-tertiary);
+        word-break: break-word;
+      }
+
+      .fox-devtools-console-entry.log {
+        color: var(--text-primary);
+      }
+
+      .fox-devtools-console-entry.info {
+        color: var(--info-color);
+      }
+
+      .fox-devtools-console-entry.warn {
+        color: var(--warning-color);
+      }
+
+      .fox-devtools-console-entry.error {
+        color: var(--error-color);
+      }
+
+      .fox-devtools-console-input {
         display: flex;
-        flex-direction: column;
-        gap: 8px;
+        gap: 10px;
       }
-      .element-actions button {
-        padding: 8px;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
+
+      .fox-devtools-console-input-field {
+        flex: 1;
+        padding: 8px 10px;
+        border-radius: var(--border-radius);
+        border: 1px solid var(--bg-tertiary);
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+        font-family: monospace;
+        font-size: 13px;
       }
-      .element-actions button.change-text {
-        background-color: ${config.secondaryColor};
-        color: white;
+
+      .fox-devtools-console-input-field:focus {
+        outline: none;
+        border-color: var(--primary-color);
       }
-      .element-actions button.change-bg {
-        background-color: #5bc0de;
-        color: white;
-      }
-      .element-actions button.remove {
-        background-color: #d9534f;
-        color: white;
-      }
-      .element-actions button.close {
-        background-color: #777;
-        color: white;
-      }
-      .actions-menu {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background-color: ${config.darkBg};
-        color: white;
-        border-radius: ${config.borderRadius};
-        padding: 15px;
-        width: 80%;
-        max-width: 300px;
-        z-index: 100000;
-        box-shadow: ${config.shadow};
-      }
-      .actions-menu h3 {
-        margin-top: 0;
-        color: ${config.primaryColor};
-      }
-      .actions-menu button {
-        display: block;
-        width: 100%;
+
+      /* Inspetor de elementos */
+      .fox-devtools-inspector-info {
+        background-color: var(--bg-secondary);
+        border-radius: var(--border-radius);
         padding: 10px;
-        margin-bottom: 8px;
-        background-color: #333;
+        margin-bottom: 10px;
+      }
+
+      .fox-devtools-inspector-property {
+        margin-bottom: 5px;
+      }
+
+      .fox-devtools-inspector-property-label {
+        font-weight: bold;
+        color: var(--primary-color);
+        margin-right: 5px;
+      }
+
+      .fox-devtools-inspector-css {
+        margin-top: 10px;
+      }
+
+      .fox-devtools-inspector-css-property {
+        display: flex;
+        margin-bottom: 3px;
+      }
+
+      .fox-devtools-inspector-css-name {
+        flex: 1;
+        color: var(--primary-light);
+      }
+
+      .fox-devtools-inspector-css-value {
+        flex: 2;
+      }
+
+      /* Gerenciador de armazenamento */
+      .fox-devtools-storage-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 10px;
+      }
+
+      .fox-devtools-storage-table th {
+        text-align: left;
+        padding: 8px;
+        background-color: var(--bg-tertiary);
+        color: var(--text-primary);
+      }
+
+      .fox-devtools-storage-table td {
+        padding: 8px;
+        border-bottom: 1px solid var(--bg-tertiary);
+        vertical-align: top;
+      }
+
+      .fox-devtools-storage-actions {
+        display: flex;
+        gap: 5px;
+      }
+
+      .fox-devtools-storage-edit {
+        background-color: var(--info-color);
         color: white;
         border: none;
-        border-radius: 4px;
+        border-radius: 2px;
+        padding: 2px 5px;
         cursor: pointer;
+        font-size: 12px;
       }
-      .actions-menu button.close {
-        margin-top: 15px;
-        background-color: #777;
+
+      .fox-devtools-storage-delete {
+        background-color: var(--error-color);
+        color: white;
+        border: none;
+        border-radius: 2px;
+        padding: 2px 5px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+
+      /* Performance */
+      .fox-devtools-performance-metrics {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .fox-devtools-performance-metric {
+        background-color: var(--bg-secondary);
+        border-radius: var(--border-radius);
+        padding: 10px;
+        text-align: center;
+      }
+
+      .fox-devtools-performance-metric-value {
+        font-size: 18px;
+        font-weight: bold;
+        color: var(--primary-color);
+        margin: 5px 0;
+      }
+
+      .fox-devtools-performance-metric-label {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      /* Responsividade */
+      @media (max-width: 480px) {
+        .fox-devtools-panel {
+          width: calc(100% - 40px);
+          bottom: 70px;
+          right: 20px;
+          max-height: 60vh;
+        }
+
+        .fox-devtools-button {
+          width: 45px;
+          height: 45px;
+          bottom: 15px;
+          right: 15px;
+        }
       }
     `;
-    
+
+    const style = document.createElement('style');
+    style.textContent = css;
     document.head.appendChild(style);
-  }
 
-  // Alterna o painel principal
-  function toggleMainPanel() {
-    const panel = uiElements.panel;
-    if (panel.style.display === 'block') {
-      panel.style.display = 'none';
-    } else {
-      panel.style.display = 'block';
-      // Atualiza o estado dos botões
-      updateButtonStates();
+    // Ícones (usando SVG inline)
+    const icons = `
+      <svg xmlns="http://www.w3.org/2000/svg" style="display: none;">
+        <symbol id="fox-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M12,2C6.5,2,2,6.5,2,12s4.5,10,10,10s10-4.5,10-10S17.5,2,12,2z M12,20c-4.4,0-8-3.6-8-8s3.6-8,8-8s8,3.6,8,8S16.4,20,12,20z M15.7,11.3c0.4,0.4,0.4,1,0,1.4c-0.4,0.4-1,0.4-1.4,0l-2.3-2.3l-2.3,2.3c-0.4,0.4-1,0.4-1.4,0c-0.4-0.4-0.4-1,0-1.4l2.3-2.3L8.3,6.7c-0.4-0.4-0.4-1,0-1.4c0.4-0.4,1-0.4,1.4,0l2.3,2.3l2.3-2.3c0.4-0.4,1-0.4,1.4,0c0.4,0.4,0.4,1,0,1.4L13.4,9L15.7,11.3z"/>
+        </symbol>
+        <symbol id="console-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M5,3h14c1.1,0,2,0.9,2,2v14c0,1.1-0.9,2-2,2H5c-1.1,0-2-0.9-2-2V5C3,3.9,3.9,3,5,3z M6,7v2h8V7H6z M6,11v2h5v-2H6z M16,17l-4-4l4-4V17z"/>
+        </symbol>
+        <symbol id="click-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M11,4h2v7h7v2h-7v7h-2v-7H4v-2h7V4z"/>
+        </symbol>
+        <symbol id="inspect-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M12,9c1.7,0,3,1.3,3,3s-1.3,3-3,3s-3-1.3-3-3S10.3,9,12,9z M12,4.5c5,0,9.5,4.5,9.5,9.5S17,23.5,12,23.5S2.5,19,2.5,14S7,4.5,12,4.5z M12,3C6.5,3,2,7.5,2,13s4.5,10,10,10s10-4.5,10-10S17.5,3,12,3z"/>
+        </symbol>
+        <symbol id="storage-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M18,4h-12c-1.1,0-2,0.9-2,2v12c0,1.1,0.9,2,2,2h12c1.1,0,2-0.9,2-2V6C20,4.9,19.1,4,18,4z M12,7h4v4h-4V7z M8,7h2v4H8V7z M18,17H6v-2h12V17z M18,13h-4v-4h4V13z M8,13H6v-4h2V13z"/>
+        </symbol>
+        <symbol id="tools-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M21.7,18.6l-1.3-1.3c0.4-0.8,0.6-1.6,0.6-2.5c0-2.5-2-4.5-4.5-4.5S12,12.2,12,14.7s2,4.5,4.5,4.5c0.9,0,1.7-0.2,2.5-0.6l1.3,1.3c0.2,0.2,0.5,0.3,0.7,0.3s0.5-0.1,0.7-0.3l1.3-1.3C22.1,19.6,22.1,18.9,21.7,18.6z M14.5,17.2c-1.4,0-2.5-1.1-2.5-2.5s1.1-2.5,2.5-2.5s2.5,1.1,2.5,2.5S15.9,17.2,14.5,17.2z M12,3v2h7v2h-7v2l-3-3L12,3z M4,9v2h7V9H4z M4,13v2h7v-2H4z"/>
+        </symbol>
+        <symbol id="performance-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M19,3H5C3.9,3,3,3.9,3,5v14c0,1.1,0.9,2,2,2h14c1.1,0,2-0.9,2-2V5C21,3.9,20.1,3,19,3z M19,19H5V5h14V19z M7,12h2v4H7V12z M11,8h2v8h-2V8z M15,10h2v6h-2V10z"/>
+        </symbol>
+        <symbol id="debug-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M12,2C6.5,2,2,6.5,2,12s4.5,10,10,10s10-4.5,10-10S17.5,2,12,2z M12,20c-4.4,0-8-3.6-8-8s3.6-8,8-8s8,3.6,8,8S16.4,20,12,20z M13,17h-2v-2h2V17z M13,13h-2V7h2V13z"/>
+        </symbol>
+        <symbol id="shortcuts-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M19,3H5C3.9,3,3,3.9,3,5v14c0,1.1,0.9,2,2,2h14c1.1,0,2-0.9,2-2V5C21,3.9,20.1,3,19,3z M19,19H5V5h14V19z M7,12h5V7h2v5h5v2h-5v5h-2v-5H7V12z"/>
+        </symbol>
+        <symbol id="orientation-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M17,15h2v2h-2V15z M17,11h2v2h-2V11z M13,15h2v2h-2V15z M13,11h2v2h-2V11z M9,15h2v2H9V15z M9,11h2v2H9V11z M5,15h2v2H5V15z M5,11h2v2H5V11z M17,7h2v2h-2V7z M13,7h2v2h-2V7z M9,7h2v2H9V7z M5,7h2v2H5V7z"/>
+        </symbol>
+        <symbol id="close-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M19,6.4L17.6,5L12,10.6L6.4,5L5,6.4L10.6,12L5,17.6L6.4,19L12,13.4L17.6,19L19,17.6L13.4,12L19,6.4z"/>
+        </symbol>
+        <symbol id="theme-icon" viewBox="0 0 24 24">
+          <path fill="currentColor" d="M12,3c-5,0-9,4-9,9s4,9,9,9s9-4,9-9S17,3,12,3z M12,19c-3.9,0-7-3.1-7-7s3.1-7,7-7s7,3.1,7,7S15.9,19,12,19z"/>
+        </symbol>
+      </svg>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', icons);
+  };
+
+  // Criar elementos da UI
+  const createUI = () => {
+    // Botão flutuante
+    const button = document.createElement('button');
+    button.className = 'fox-devtools-button';
+    button.innerHTML = `
+  <img src="https://i.imgur.com/ISca1dC.png" 
+       width="24" 
+       height="24"
+       style="object-fit: contain">
+`;
+    document.body.appendChild(button);
+    FoxDevTools.elements.button = button;
+
+    // Painel principal
+    const panel = document.createElement('div');
+    panel.className = 'fox-devtools-panel';
+    panel.innerHTML = `
+      <div class="fox-devtools-header">
+        <div class="fox-devtools-title">
+          <svg width="16" height="16">
+            <use xlink:href="#fox-icon"></use>
+          </svg>
+          <span>FoxDevTools</span>
+        </div>
+        <button class="fox-devtools-close">
+          <svg width="16" height="16">
+            <use xlink:href="#close-icon"></use>
+          </svg>
+        </button>
+      </div>
+      <div class="fox-devtools-tabs">
+        <button class="fox-devtools-tab active" data-tab="console">
+          <svg width="14" height="14">
+            <use xlink:href="#console-icon"></use>
+          </svg>
+          Console
+        </button>
+        <button class="fox-devtools-tab" data-tab="auto-clicker">
+          <svg width="14" height="14">
+            <use xlink:href="#click-icon"></use>
+          </svg>
+          Auto Clicker
+        </button>
+        <button class="fox-devtools-tab" data-tab="inspector">
+          <svg width="14" height="14">
+            <use xlink:href="#inspect-icon"></use>
+          </svg>
+          Inspetor
+        </button>
+        <button class="fox-devtools-tab" data-tab="storage">
+          <svg width="14" height="14">
+            <use xlink:href="#storage-icon"></use>
+          </svg>
+          Armazenamento
+        </button>
+        <button class="fox-devtools-tab" data-tab="tools">
+          <svg width="14" height="14">
+            <use xlink:href="#tools-icon"></use>
+          </svg>
+          Ferramentas
+        </button>
+        <button class="fox-devtools-tab" data-tab="performance">
+          <svg width="14" height="14">
+            <use xlink:href="#performance-icon"></use>
+          </svg>
+          Desempenho
+        </button>
+        <button class="fox-devtools-tab" data-tab="debug">
+          <svg width="14" height="14">
+            <use xlink:href="#debug-icon"></use>
+          </svg>
+          Depuração
+        </button>
+        <button class="fox-devtools-tab" data-tab="shortcuts">
+          <svg width="14" height="14">
+            <use xlink:href="#shortcuts-icon"></use>
+          </svg>
+          Atalhos
+        </button>
+        <button class="fox-devtools-tab" data-tab="orientation">
+          <svg width="14" height="14">
+            <use xlink:href="#orientation-icon"></use>
+          </svg>
+          Orientação
+        </button>
+      </div>
+      <div class="fox-devtools-content">
+        <!-- Conteúdo será injetado dinamicamente -->
+      </div>
+    `;
+    document.body.appendChild(panel);
+    FoxDevTools.elements.panel = panel;
+
+    // Conteúdo das abas
+    const content = panel.querySelector('.fox-devtools-content');
+    
+    // Console
+    const consoleContent = document.createElement('div');
+    consoleContent.className = 'fox-devtools-tab-content active';
+    consoleContent.dataset.tabContent = 'console';
+    consoleContent.innerHTML = `
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-console-output"></div>
+        <div class="fox-devtools-console-input">
+          <input type="text" class="fox-devtools-console-input-field" placeholder="Digite um comando JS...">
+          <button class="fox-devtools-button-primary">Executar</button>
+        </div>
+        <div class="fox-devtools-button-group">
+          <button class="fox-devtools-button-secondary">Limpar</button>
+          <button class="fox-devtools-button-secondary">Histórico</button>
+        </div>
+      </div>
+    `;
+    content.appendChild(consoleContent);
+    FoxDevTools.elements.console = consoleContent;
+
+    // Auto Clicker
+    const autoClickerContent = document.createElement('div');
+    autoClickerContent.className = 'fox-devtools-tab-content';
+    autoClickerContent.dataset.tabContent = 'auto-clicker';
+    autoClickerContent.innerHTML = `
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-input-group">
+          <label class="fox-devtools-label">Seletor CSS</label>
+          <input type="text" class="fox-devtools-input" placeholder="ex: .button, #submit">
+        </div>
+        <div class="fox-devtools-input-group">
+          <label class="fox-devtools-label">Intervalo (ms)</label>
+          <input type="number" class="fox-devtools-input" value="1000" min="100" step="100">
+        </div>
+        <div class="fox-devtools-button-group">
+          <button class="fox-devtools-button-primary">Iniciar</button>
+          <button class="fox-devtools-button-danger" disabled>Parar</button>
+        </div>
+        <div class="fox-devtools-status" style="margin-top: 10px; color: var(--text-secondary); font-size: 13px;">
+          Status: Inativo
+        </div>
+      </div>
+    `;
+    content.appendChild(autoClickerContent);
+    FoxDevTools.elements.autoClicker = autoClickerContent;
+
+    // Inspetor de elementos
+    const inspectorContent = document.createElement('div');
+    inspectorContent.className = 'fox-devtools-tab-content';
+    inspectorContent.dataset.tabContent = 'inspector';
+    inspectorContent.innerHTML = `
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-button-group">
+          <button class="fox-devtools-button-primary">Ativar Inspetor</button>
+        </div>
+        <div class="fox-devtools-status" style="margin-top: 10px; color: var(--text-secondary); font-size: 13px;">
+          Status: Desativado
+        </div>
+        <div class="fox-devtools-inspector-info" style="margin-top: 15px; display: none;">
+          <div class="fox-devtools-inspector-property">
+            <span class="fox-devtools-inspector-property-label">Tag:</span>
+            <span class="fox-devtools-inspector-property-value" data-property="tag"></span>
+          </div>
+          <div class="fox-devtools-inspector-property">
+            <span class="fox-devtools-inspector-property-label">ID:</span>
+            <span class="fox-devtools-inspector-property-value" data-property="id"></span>
+          </div>
+          <div class="fox-devtools-inspector-property">
+            <span class="fox-devtools-inspector-property-label">Classes:</span>
+            <span class="fox-devtools-inspector-property-value" data-property="classes"></span>
+          </div>
+          <div class="fox-devtools-inspector-property">
+            <span class="fox-devtools-inspector-property-label">Texto:</span>
+            <span class="fox-devtools-inspector-property-value" data-property="text"></span>
+          </div>
+          <div class="fox-devtools-inspector-css">
+            <div class="fox-devtools-section-title">CSS Computado</div>
+            <div class="fox-devtools-inspector-css-property">
+              <span class="fox-devtools-inspector-css-name">display:</span>
+              <span class="fox-devtools-inspector-css-value" data-css="display"></span>
+            </div>
+            <div class="fox-devtools-inspector-css-property">
+              <span class="fox-devtools-inspector-css-name">color:</span>
+              <span class="fox-devtools-inspector-css-value" data-css="color"></span>
+            </div>
+            <div class="fox-devtools-inspector-css-property">
+              <span class="fox-devtools-inspector-css-name">font-size:</span>
+              <span class="fox-devtools-inspector-css-value" data-css="font-size"></span>
+            </div>
+            <div class="fox-devtools-inspector-css-property">
+              <span class="fox-devtools-inspector-css-name">background:</span>
+              <span class="fox-devtools-inspector-css-value" data-css="background"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    content.appendChild(inspectorContent);
+    FoxDevTools.elements.inspector = inspectorContent;
+
+    // Gerenciador de armazenamento
+    const storageContent = document.createElement('div');
+    storageContent.className = 'fox-devtools-tab-content';
+    storageContent.dataset.tabContent = 'storage';
+    storageContent.innerHTML = `
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-tabs" style="margin-bottom: 15px;">
+          <button class="fox-devtools-tab active" data-storage-tab="local">localStorage</button>
+          <button class="fox-devtools-tab" data-storage-tab="session">sessionStorage</button>
+          <button class="fox-devtools-tab" data-storage-tab="cookies">Cookies</button>
+        </div>
+        <div class="fox-devtools-storage-content" data-storage-content="local">
+          <table class="fox-devtools-storage-table">
+            <thead>
+              <tr>
+                <th>Chave</th>
+                <th>Valor</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="fox-devtools-button-group">
+            <button class="fox-devtools-button-secondary">Adicionar</button>
+            <button class="fox-devtools-button-danger">Limpar</button>
+          </div>
+        </div>
+        <div class="fox-devtools-storage-content" data-storage-content="session" style="display: none;">
+          <table class="fox-devtools-storage-table">
+            <thead>
+              <tr>
+                <th>Chave</th>
+                <th>Valor</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="fox-devtools-button-group">
+            <button class="fox-devtools-button-secondary">Adicionar</button>
+            <button class="fox-devtools-button-danger">Limpar</button>
+          </div>
+        </div>
+        <div class="fox-devtools-storage-content" data-storage-content="cookies" style="display: none;">
+          <table class="fox-devtools-storage-table">
+            <thead>
+              <tr>
+                <th>Nome</th>
+                <th>Valor</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="fox-devtools-button-group">
+            <button class="fox-devtools-button-secondary">Adicionar</button>
+            <button class="fox-devtools-button-danger">Limpar</button>
+          </div>
+        </div>
+      </div>
+    `;
+    content.appendChild(storageContent);
+    FoxDevTools.elements.storage = storageContent;
+
+    // Ferramentas
+    const toolsContent = document.createElement('div');
+    toolsContent.className = 'fox-devtools-tab-content';
+    toolsContent.dataset.tabContent = 'tools';
+    toolsContent.innerHTML = `
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-input-group">
+          <label class="fox-devtools-label">CSS Personalizado</label>
+          <textarea class="fox-devtools-input" rows="3" placeholder="Digite seu CSS aqui..."></textarea>
+        </div>
+        <div class="fox-devtools-button-group">
+          <button class="fox-devtools-button-primary">Aplicar</button>
+          <button class="fox-devtools-button-secondary">Remover</button>
+        </div>
+      </div>
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-input-group">
+          <label class="fox-devtools-label">Cor de Fundo</label>
+          <input type="color" class="fox-devtools-input" value="#ffffff">
+        </div>
+        <div class="fox-devtools-button-group">
+          <button class="fox-devtools-button-primary">Aplicar</button>
+          <button class="fox-devtools-button-secondary">Resetar</button>
+        </div>
+      </div>
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-input-group">
+          <label class="fox-devtools-label">Filtros CSS</label>
+          <select class="fox-devtools-input">
+            <option value="none">Nenhum</option>
+            <option value="grayscale(100%)">Escala de cinza</option>
+            <option value="invert(100%)">Inverter cores</option>
+            <option value="sepia(100%)">Sépia</option>
+            <option value="blur(2px)">Desfoque</option>
+            <option value="brightness(150%)">Brilho</option>
+          </select>
+        </div>
+        <div class="fox-devtools-button-group">
+          <button class="fox-devtools-button-primary">Aplicar</button>
+          <button class="fox-devtools-button-secondary">Remover</button>
+        </div>
+      </div>
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-input-group">
+          <label class="fox-devtools-label">Ocultar Elemento</label>
+          <input type="text" class="fox-devtools-input" placeholder="Seletor CSS">
+        </div>
+        <div class="fox-devtools-button-group">
+          <button class="fox-devtools-button-primary">Ocultar</button>
+          <button class="fox-devtools-button-secondary">Mostrar</button>
+        </div>
+      </div>
+    `;
+    content.appendChild(toolsContent);
+    FoxDevTools.elements.tools = toolsContent;
+
+    // Desempenho
+    const performanceContent = document.createElement('div');
+    performanceContent.className = 'fox-devtools-tab-content';
+    performanceContent.dataset.tabContent = 'performance';
+    performanceContent.innerHTML = `
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-performance-metrics">
+          <div class="fox-devtools-performance-metric">
+            <div class="fox-devtools-performance-metric-label">DOMContentLoaded</div>
+            <div class="fox-devtools-performance-metric-value" data-metric="dom">0ms</div>
+          </div>
+          <div class="fox-devtools-performance-metric">
+            <div class="fox-devtools-performance-metric-label">Load Time</div>
+            <div class="fox-devtools-performance-metric-value" data-metric="load">0ms</div>
+          </div>
+          <div class="fox-devtools-performance-metric">
+            <div class="fox-devtools-performance-metric-label">Tempo Execução</div>
+            <div class="fox-devtools-performance-metric-value" data-metric="runtime">0ms</div>
+          </div>
+          <div class="fox-devtools-performance-metric">
+            <div class="fox-devtools-performance-metric-label">FPS</div>
+            <div class="fox-devtools-performance-metric-value" data-metric="fps">0</div>
+          </div>
+        </div>
+      </div>
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-button-group">
+          <button class="fox-devtools-button-primary">Atualizar</button>
+        </div>
+      </div>
+    `;
+    content.appendChild(performanceContent);
+    FoxDevTools.elements.performance = performanceContent;
+
+    // Depuração
+    const debugContent = document.createElement('div');
+    debugContent.className = 'fox-devtools-tab-content';
+    debugContent.dataset.tabContent = 'debug';
+    debugContent.innerHTML = `
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-input-group">
+          <label class="fox-devtools-label">Logs ao vivo</label>
+          <div class="fox-devtools-button-group">
+            <button class="fox-devtools-button-primary">Ativar</button>
+            <button class="fox-devtools-button-secondary" disabled>Desativar</button>
+          </div>
+        </div>
+      </div>
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-console-output" style="height: 150px;"></div>
+      </div>
+    `;
+    content.appendChild(debugContent);
+    FoxDevTools.elements.debug = debugContent;
+
+    // Atalhos
+    const shortcutsContent = document.createElement('div');
+    shortcutsContent.className = 'fox-devtools-tab-content';
+    shortcutsContent.dataset.tabContent = 'shortcuts';
+    shortcutsContent.innerHTML = `
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-button-group" style="flex-wrap: wrap;">
+          <button class="fox-devtools-button-secondary" data-action="scroll-top">Topo da Página</button>
+          <button class="fox-devtools-button-secondary" data-action="reload">Recarregar</button>
+          <button class="fox-devtools-button-secondary" data-action="inject-jquery">Injetar jQuery</button>
+          <button class="fox-devtools-button-secondary" data-action="disable-scripts">Desativar Scripts</button>
+          <button class="fox-devtools-button-secondary" data-action="copy-html">Copiar HTML</button>
+        </div>
+      </div>
+    `;
+    content.appendChild(shortcutsContent);
+    FoxDevTools.elements.shortcuts = shortcutsContent;
+
+    // Orientação
+    const orientationContent = document.createElement('div');
+    orientationContent.className = 'fox-devtools-tab-content';
+    orientationContent.dataset.tabContent = 'orientation';
+    orientationContent.innerHTML = `
+      <div class="fox-devtools-section">
+        <div class="fox-devtools-button-group" style="flex-wrap: wrap;">
+          <button class="fox-devtools-button-secondary" data-orientation="left">Girar Esquerda</button>
+          <button class="fox-devtools-button-secondary" data-orientation="right">Girar Direita</button>
+          <button class="fox-devtools-button-secondary" data-orientation="upside">Inverter</button>
+          <button class="fox-devtools-button-primary" data-orientation="reset">Restaurar</button>
+        </div>
+      </div>
+    `;
+    content.appendChild(orientationContent);
+    FoxDevTools.elements.orientation = orientationContent;
+
+    // Botão de tema
+    const themeButton = document.createElement('button');
+    themeButton.className = 'fox-devtools-button-secondary';
+    themeButton.style.position = 'absolute';
+    themeButton.style.top = '10px';
+    themeButton.style.right = '10px';
+    themeButton.innerHTML = `
+      <svg width="14" height="14">
+        <use xlink:href="#theme-icon"></use>
+      </svg>
+    `;
+    panel.querySelector('.fox-devtools-header').appendChild(themeButton);
+  };
+
+  // Configurar eventos
+  const setupEvents = () => {
+    // Botão flutuante
+    FoxDevTools.elements.button.addEventListener('click', () => {
+      const panel = FoxDevTools.elements.panel;
+      panel.classList.toggle('visible');
+    });
+
+    // Fechar painel
+    FoxDevTools.elements.panel.querySelector('.fox-devtools-close').addEventListener('click', () => {
+      FoxDevTools.elements.panel.classList.remove('visible');
+    });
+
+    // Alternar abas
+    const tabs = FoxDevTools.elements.panel.querySelectorAll('.fox-devtools-tab');
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        // Remover classe active de todas as abas e conteúdos
+        tabs.forEach(t => t.classList.remove('active'));
+        FoxDevTools.elements.panel.querySelectorAll('.fox-devtools-tab-content').forEach(content => {
+          content.classList.remove('active');
+        });
+
+        // Adicionar classe active à aba clicada e seu conteúdo
+        tab.classList.add('active');
+        const tabName = tab.dataset.tab;
+        FoxDevTools.elements.panel.querySelector(`.fox-devtools-tab-content[data-tab-content="${tabName}"]`).classList.add('active');
+      });
+    });
+
+    // Alternar abas de armazenamento
+    const storageTabs = FoxDevTools.elements.storage.querySelectorAll('[data-storage-tab]');
+    storageTabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        storageTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+
+        const tabName = tab.dataset.storageTab;
+        FoxDevTools.elements.storage.querySelectorAll('[data-storage-content]').forEach(content => {
+          content.style.display = content.dataset.storageContent === tabName ? 'block' : 'none';
+        });
+
+        // Atualizar dados da aba selecionada
+        updateStorageData(tabName);
+      });
+    });
+
+    // Console - Executar comando
+    const consoleInput = FoxDevTools.elements.console.querySelector('.fox-devtools-console-input-field');
+    const consoleExecute = FoxDevTools.elements.console.querySelector('.fox-devtools-button-primary');
+    
+    consoleExecute.addEventListener('click', () => {
+      executeConsoleCommand(consoleInput.value);
+      consoleInput.value = '';
+    });
+
+    consoleInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        executeConsoleCommand(consoleInput.value);
+        consoleInput.value = '';
+      }
+    });
+
+    // Console - Limpar
+    FoxDevTools.elements.console.querySelector('.fox-devtools-button-secondary').addEventListener('click', () => {
+      FoxDevTools.elements.console.querySelector('.fox-devtools-console-output').innerHTML = '';
+    });
+
+    // Auto Clicker - Iniciar/Parar
+    const autoClickerStart = FoxDevTools.elements.autoClicker.querySelector('.fox-devtools-button-primary');
+    const autoClickerStop = FoxDevTools.elements.autoClicker.querySelector('.fox-devtools-button-danger');
+    const autoClickerStatus = FoxDevTools.elements.autoClicker.querySelector('.fox-devtools-status');
+    
+    autoClickerStart.addEventListener('click', () => {
+      const selector = FoxDevTools.elements.autoClicker.querySelector('input[type="text"]').value;
+      const interval = parseInt(FoxDevTools.elements.autoClicker.querySelector('input[type="number"]').value);
+      
+      if (!selector) {
+        logToConsole('Erro: Seletor CSS não informado', 'error');
+        return;
+      }
+      
+      if (interval < 100) {
+        logToConsole('Erro: Intervalo mínimo é 100ms', 'error');
+        return;
+      }
+      
+      startAutoClicker(selector, interval);
+      autoClickerStart.disabled = true;
+      autoClickerStop.disabled = false;
+      autoClickerStatus.textContent = 'Status: Clicando a cada ' + interval + 'ms';
+      autoClickerStatus.style.color = 'var(--success-color)';
+    });
+    
+    autoClickerStop.addEventListener('click', () => {
+      stopAutoClicker();
+      autoClickerStart.disabled = false;
+      autoClickerStop.disabled = true;
+      autoClickerStatus.textContent = 'Status: Inativo';
+      autoClickerStatus.style.color = 'var(--text-secondary)';
+    });
+
+    // Inspetor - Ativar/Desativar
+    const inspectorButton = FoxDevTools.elements.inspector.querySelector('.fox-devtools-button-primary');
+    const inspectorStatus = FoxDevTools.elements.inspector.querySelector('.fox-devtools-status');
+    const inspectorInfo = FoxDevTools.elements.inspector.querySelector('.fox-devtools-inspector-info');
+    
+    inspectorButton.addEventListener('click', () => {
+      FoxDevTools.settings.inspectorMode = !FoxDevTools.settings.inspectorMode;
+      
+      if (FoxDevTools.settings.inspectorMode) {
+        inspectorButton.textContent = 'Desativar Inspetor';
+        inspectorStatus.textContent = 'Status: Ativo - Clique em qualquer elemento';
+        inspectorStatus.style.color = 'var(--success-color)';
+        document.body.style.cursor = 'crosshair';
+        
+        // Adicionar evento de clique na página
+        document.addEventListener('click', inspectElementHandler, true);
+      } else {
+        inspectorButton.textContent = 'Ativar Inspetor';
+        inspectorStatus.textContent = 'Status: Desativado';
+        inspectorStatus.style.color = 'var(--text-secondary)';
+        document.body.style.cursor = '';
+        inspectorInfo.style.display = 'none';
+        
+        // Remover evento de clique
+        document.removeEventListener('click', inspectElementHandler, true);
+      }
+    });
+
+    // Armazenamento - Adicionar item
+    FoxDevTools.elements.storage.querySelectorAll('[data-storage-content]').forEach(content => {
+      const addButton = content.querySelector('.fox-devtools-button-secondary');
+      const clearButton = content.querySelector('.fox-devtools-button-danger');
+      
+      addButton.addEventListener('click', () => {
+        const tabName = content.dataset.storageContent;
+        addStorageItem(tabName);
+      });
+      
+      clearButton.addEventListener('click', () => {
+        const tabName = content.dataset.storageContent;
+        clearStorage(tabName);
+      });
+    });
+
+    // Ferramentas - Aplicar CSS
+    const cssTextarea = FoxDevTools.elements.tools.querySelector('textarea');
+    const applyCssButton = FoxDevTools.elements.tools.querySelector('.fox-devtools-button-primary');
+    const removeCssButton = FoxDevTools.elements.tools.querySelector('.fox-devtools-button-secondary');
+    
+    applyCssButton.addEventListener('click', () => {
+      const css = cssTextarea.value;
+      if (css) {
+        applyCustomCSS(css);
+        logToConsole('CSS personalizado aplicado', 'info');
+      }
+    });
+    
+    removeCssButton.addEventListener('click', () => {
+      removeCustomCSS();
+      cssTextarea.value = '';
+      logToConsole('CSS personalizado removido', 'info');
+    });
+
+    // Ferramentas - Cor de fundo
+    const colorInput = FoxDevTools.elements.tools.querySelector('input[type="color"]');
+    const applyColorButton = FoxDevTools.elements.tools.querySelectorAll('.fox-devtools-button-primary')[1];
+    const resetColorButton = FoxDevTools.elements.tools.querySelectorAll('.fox-devtools-button-secondary')[1];
+    
+    applyColorButton.addEventListener('click', () => {
+      document.body.style.backgroundColor = colorInput.value;
+      logToConsole(`Cor de fundo alterada para ${colorInput.value}`, 'info');
+    });
+    
+    resetColorButton.addEventListener('click', () => {
+      document.body.style.backgroundColor = '';
+      colorInput.value = '#ffffff';
+      logToConsole('Cor de fundo resetada', 'info');
+    });
+
+    // Ferramentas - Filtros CSS
+    const filterSelect = FoxDevTools.elements.tools.querySelector('select');
+    const applyFilterButton = FoxDevTools.elements.tools.querySelectorAll('.fox-devtools-button-primary')[2];
+    const removeFilterButton = FoxDevTools.elements.tools.querySelectorAll('.fox-devtools-button-secondary')[2];
+    
+    applyFilterButton.addEventListener('click', () => {
+      document.body.style.filter = filterSelect.value;
+      logToConsole(`Filtro CSS aplicado: ${filterSelect.value}`, 'info');
+    });
+    
+    removeFilterButton.addEventListener('click', () => {
+      document.body.style.filter = '';
+      logToConsole('Filtro CSS removido', 'info');
+    });
+
+    // Ferramentas - Ocultar elemento
+    const hideInput = FoxDevTools.elements.tools.querySelectorAll('input[type="text"]')[1];
+    const hideButton = FoxDevTools.elements.tools.querySelectorAll('.fox-devtools-button-primary')[3];
+    const showButton = FoxDevTools.elements.tools.querySelectorAll('.fox-devtools-button-secondary')[3];
+    
+    hideButton.addEventListener('click', () => {
+      const selector = hideInput.value;
+      if (selector) {
+        document.querySelectorAll(selector).forEach(el => {
+          el.style.display = 'none';
+        });
+        logToConsole(`Elemento(s) com seletor "${selector}" ocultado(s)`, 'info');
+      }
+    });
+    
+    showButton.addEventListener('click', () => {
+      const selector = hideInput.value;
+      if (selector) {
+        document.querySelectorAll(selector).forEach(el => {
+          el.style.display = '';
+        });
+        logToConsole(`Elemento(s) com seletor "${selector}" mostrado(s)`, 'info');
+      }
+    });
+
+    // Desempenho - Atualizar
+    FoxDevTools.elements.performance.querySelector('.fox-devtools-button-primary').addEventListener('click', () => {
+      updatePerformanceMetrics();
+    });
+
+    // Depuração - Ativar logs
+    const enableLogsButton = FoxDevTools.elements.debug.querySelector('.fox-devtools-button-primary');
+    const disableLogsButton = FoxDevTools.elements.debug.querySelector('.fox-devtools-button-secondary');
+    
+    enableLogsButton.addEventListener('click', () => {
+      startLogCapture();
+      enableLogsButton.disabled = true;
+      disableLogsButton.disabled = false;
+      logToConsole('Captura de logs ativada', 'info');
+    });
+    
+    disableLogsButton.addEventListener('click', () => {
+      stopLogCapture();
+      enableLogsButton.disabled = false;
+      disableLogsButton.disabled = true;
+      logToConsole('Captura de logs desativada', 'info');
+    });
+
+    // Atalhos
+    FoxDevTools.elements.shortcuts.querySelectorAll('button').forEach(button => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.action;
+        executeShortcut(action);
+      });
+    });
+
+    // Orientação
+    FoxDevTools.elements.orientation.querySelectorAll('button').forEach(button => {
+      button.addEventListener('click', () => {
+        const orientation = button.dataset.orientation;
+        rotateScreen(orientation);
+      });
+    });
+
+    // Tema
+    FoxDevTools.elements.panel.querySelector('.fox-devtools-header button:last-child').addEventListener('click', () => {
+      toggleTheme();
+    });
+  };
+
+  // Funções auxiliares
+  const logToConsole = (message, type = 'log') => {
+    const consoleOutput = FoxDevTools.elements.console.querySelector('.fox-devtools-console-output');
+    const entry = document.createElement('div');
+    entry.className = `fox-devtools-console-entry ${type}`;
+    entry.textContent = message;
+    consoleOutput.appendChild(entry);
+    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+    
+    // Também logar no console real
+    if (type === 'log') console.log(message);
+    else if (type === 'info') console.info(message);
+    else if (type === 'warn') console.warn(message);
+    else if (type === 'error') console.error(message);
+  };
+
+  const executeConsoleCommand = (command) => {
+    if (!command) return;
+    
+    try {
+      // Logar o comando
+      logToConsole(`> ${command}`, 'log');
+      
+      // Executar e logar o resultado
+      const result = eval(command);
+      if (result !== undefined) {
+        logToConsole(result, 'info');
+      }
+    } catch (error) {
+      logToConsole(error.message, 'error');
     }
-  }
+  };
 
-  // Alterna o modo de inspeção
-  function toggleInspectMode() {
-    state.inspecting = !state.inspecting;
+  const startAutoClicker = (selector, interval) => {
+    stopAutoClicker(); // Parar qualquer intervalo existente
     
-    if (state.inspecting) {
-      uiElements.inspectOverlay.style.display = 'block';
-      document.body.style.cursor = 'pointer';
-      logToConsole('Modo de inspeção ativado. Toque em qualquer elemento para inspecionar.');
-    } else {
-      uiElements.inspectOverlay.style.display = 'none';
-      document.body.style.cursor = '';
-      logToConsole('Modo de inspeção desativado.');
+    FoxDevTools.settings.autoClickerInterval = setInterval(() => {
+      const elements = document.querySelectorAll(selector);
+      if (elements.length > 0) {
+        elements.forEach(el => {
+          el.click();
+          logToConsole(`Clicando em elemento: ${selector}`, 'info');
+        });
+      } else {
+        logToConsole(`Nenhum elemento encontrado com o seletor: ${selector}`, 'warn');
+      }
+    }, interval);
+  };
+
+  const stopAutoClicker = () => {
+    if (FoxDevTools.settings.autoClickerInterval) {
+      clearInterval(FoxDevTools.settings.autoClickerInterval);
+      FoxDevTools.settings.autoClickerInterval = null;
     }
-    
-    updateButtonStates();
-    setupInspectMode();
-  }
+  };
 
-  // Configura os eventos do modo de inspeção
-  function setupInspectMode() {
-    const overlay = uiElements.inspectOverlay;
-    
-    // Remove eventos anteriores para evitar duplicação
-    overlay.removeEventListener('mousemove', handleElementHover);
-    overlay.removeEventListener('click', handleElementClick);
-    document.removeEventListener('keydown', handleEscapeKey);
-    
-    if (state.inspecting) {
-      overlay.addEventListener('mousemove', handleElementHover);
-      overlay.addEventListener('click', handleElementClick);
-      document.addEventListener('keydown', handleEscapeKey);
-    }
-  }
-
-  // Manipula o hover sobre elementos
-  function handleElementHover(e) {
-    const element = document.elementFromPoint(e.clientX, e.clientY);
-    if (!element || element === uiElements.inspectOverlay) return;
-    
-    const rect = element.getBoundingClientRect();
-    const overlay = uiElements.inspectOverlay;
-    
-    overlay.style.left = `${rect.left}px`;
-    overlay.style.top = `${rect.top}px`;
-    overlay.style.width = `${rect.width}px`;
-    overlay.style.height = `${rect.height}px`;
-    overlay.classList.add('highlight');
-  }
-
-  // Manipula o clique em elementos
-  function handleElementClick(e) {
+  const inspectElementHandler = (e) => {
     e.preventDefault();
     e.stopPropagation();
     
-    const element = document.elementFromPoint(e.clientX, e.clientY);
-    if (!element || element === uiElements.inspectOverlay) return;
+    const element = e.target;
+    const inspectorInfo = FoxDevTools.elements.inspector.querySelector('.fox-devtools-inspector-info');
+    const computedStyle = window.getComputedStyle(element);
     
-    showElementInfo(element);
-    toggleInspectMode(); // Desativa o modo de inspeção após selecionar um elemento
-  }
+    // Preencher informações
+    FoxDevTools.elements.inspector.querySelector('[data-property="tag"]').textContent = element.tagName.toLowerCase();
+    FoxDevTools.elements.inspector.querySelector('[data-property="id"]').textContent = element.id || 'Nenhum';
+    FoxDevTools.elements.inspector.querySelector('[data-property="classes"]').textContent = element.className || 'Nenhuma';
+    FoxDevTools.elements.inspector.querySelector('[data-property="text"]').textContent = element.textContent.trim() || 'Nenhum';
+    
+    // CSS computado
+    FoxDevTools.elements.inspector.querySelector('[data-css="display"]').textContent = computedStyle.display;
+    FoxDevTools.elements.inspector.querySelector('[data-css="color"]').textContent = computedStyle.color;
+    FoxDevTools.elements.inspector.querySelector('[data-css="font-size"]').textContent = computedStyle.fontSize;
+    FoxDevTools.elements.inspector.querySelector('[data-css="background"]').textContent = computedStyle.background || computedStyle.backgroundColor;
+    
+    // Mostrar informações
+    inspectorInfo.style.display = 'block';
+    
+    // Destacar elemento
+    const prevOutline = element.style.outline;
+    const prevOutlineOffset = element.style.outlineOffset;
+    element.style.outline = '2px solid var(--primary-color)';
+    element.style.outlineOffset = '2px';
+    
+    // Remover destaque após 2 segundos
+    setTimeout(() => {
+      element.style.outline = prevOutline;
+      element.style.outlineOffset = prevOutlineOffset;
+    }, 2000);
+    
+    return false;
+  };
 
-  // Manipula a tecla Escape para sair do modo de inspeção
-  function handleEscapeKey(e) {
-    if (e.key === 'Escape' && state.inspecting) {
-      toggleInspectMode();
+  const updateStorageData = (type) => {
+    let data = [];
+    const tbody = FoxDevTools.elements.storage.querySelector(`[data-storage-content="${type}"] tbody`);
+    tbody.innerHTML = '';
+    
+    if (type === 'local') {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        data.push({ key, value: localStorage.getItem(key) });
+      }
+    } else if (type === 'session') {
+      for (let i = 0; i < sessionStorage.length; i++) {
+        const key = sessionStorage.key(i);
+        data.push({ key, value: sessionStorage.getItem(key) });
+      }
+    } else if (type === 'cookies') {
+      data = document.cookie.split(';').map(cookie => {
+        const [key, value] = cookie.trim().split('=');
+        return { key, value: decodeURIComponent(value) };
+      });
     }
-  }
+    
+    data.forEach(item => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${item.key}</td>
+        <td>${item.value}</td>
+        <td>
+          <div class="fox-devtools-storage-actions">
+            <button class="fox-devtools-storage-edit" data-key="${item.key}">Editar</button>
+            <button class="fox-devtools-storage-delete" data-key="${item.key}">Excluir</button>
+          </div>
+        </td>
+      `;
+      tbody.appendChild(row);
+    });
+    
+    // Configurar eventos de edição/exclusão
+    tbody.querySelectorAll('.fox-devtools-storage-edit').forEach(button => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.key;
+        const newValue = prompt(`Editar valor para "${key}"`, data.find(item => item.key === key).value);
+        if (newValue !== null) {
+          if (type === 'local') localStorage.setItem(key, newValue);
+          else if (type === 'session') sessionStorage.setItem(key, newValue);
+          else if (type === 'cookies') setCookie(key, newValue);
+          updateStorageData(type);
+        }
+      });
+    });
+    
+    tbody.querySelectorAll('.fox-devtools-storage-delete').forEach(button => {
+      button.addEventListener('click', () => {
+        const key = button.dataset.key;
+        if (confirm(`Excluir "${key}"?`)) {
+          if (type === 'local') localStorage.removeItem(key);
+          else if (type === 'session') sessionStorage.removeItem(key);
+          else if (type === 'cookies') deleteCookie(key);
+          updateStorageData(type);
+        }
+      });
+    });
+  };
 
-  // Mostra informações do elemento selecionado
-  function showElementInfo(element) {
-    // Cria um modal com informações do elemento
-    const modal = document.createElement('div');
-    modal.className = 'element-info-modal';
+  const addStorageItem = (type) => {
+    const key = prompt('Chave:');
+    if (!key) return;
     
-    // Obtém informações do elemento
-    const tagName = element.tagName.toLowerCase();
-    const elementId = element.id ? `#${element.id}` : '';
-    const elementClasses = element.className ? `.${element.className.split(' ').join('.')}` : '';
-    const elementText = element.innerText || element.textContent || '';
-    const attributes = Array.from(element.attributes)
-      .map(attr => `${attr.name}="${attr.value}"`)
-      .join(' ');
+    const value = prompt('Valor:');
+    if (value === null) return;
     
-    modal.innerHTML = `
-      <h3>${tagName}${elementId}${elementClasses}</h3>
-      <div class="element-info-content">
-        <p><strong>Tag:</strong> &lt;${tagName}&gt;</p>
-        ${elementId ? `<p><strong>ID:</strong> ${element.id}</p>` : ''}
-        ${elementClasses ? `<p><strong>Classes:</strong> ${element.className}</p>` : ''}
-        ${attributes ? `<p><strong>Atributos:</strong> ${attributes}</p>` : ''}
-        <p><strong>Texto:</strong> ${elementText.trim() || '(vazio)'}</p>
-      </div>
-      <div class="element-actions">
-        <button class="change-text">Alterar Texto</button>
-        <button class="change-bg">Mudar Cor de Fundo</button>
-        <button class="remove">Remover Elemento</button>
-        <button class="close">Fechar</button>
-      </div>
-    `;
+    if (type === 'local') localStorage.setItem(key, value);
+    else if (type === 'session') sessionStorage.setItem(key, value);
+    else if (type === 'cookies') setCookie(key, value);
     
-    // Adiciona eventos aos botões
-    modal.querySelector('.change-text').addEventListener('click', () => {
-      const newText = prompt('Digite o novo texto:', elementText);
-      if (newText !== null) {
-        element.innerText = newText;
-        state.modifiedElements.push(element);
-        logToConsole(`Texto do elemento ${tagName} alterado para: "${newText}"`);
-        modal.remove();
-      }
-    });
-    
-    modal.querySelector('.change-bg').addEventListener('click', () => {
-      const newColor = prompt('Digite a nova cor de fundo (nome, hex, rgb):', '#ff0000');
-      if (newColor) {
-        element.style.backgroundColor = newColor;
-        state.modifiedElements.push(element);
-        logToConsole(`Cor de fundo do elemento ${tagName} alterada para: ${newColor}`);
-        modal.remove();
-      }
-    });
-    
-    modal.querySelector('.remove').addEventListener('click', () => {
-      if (confirm('Tem certeza que deseja remover este elemento?')) {
-        element.remove();
-        state.modifiedElements.push(element);
-        logToConsole(`Elemento ${tagName} removido da página`);
-        modal.remove();
-      }
-    });
-    
-    modal.querySelector('.close').addEventListener('click', () => {
-      modal.remove();
-    });
-    
-    document.body.appendChild(modal);
-  }
+    updateStorageData(type);
+    logToConsole(`${type === 'cookies' ? 'Cookie' : 'Item'} adicionado: ${key}=${value}`, 'info');
+  };
 
-  // Alterna o console
-  function toggleConsole() {
-    state.consoleOpen = !state.consoleOpen;
+  const clearStorage = (type) => {
+    if (confirm(`Limpar todos os ${type === 'cookies' ? 'cookies' : 'itens'}?`)) {
+      if (type === 'local') localStorage.clear();
+      else if (type === 'session') sessionStorage.clear();
+      else if (type === 'cookies') clearCookies();
+      
+      updateStorageData(type);
+      logToConsole(`${type === 'cookies' ? 'Cookies' : 'Armazenamento'} limpo`, 'info');
+    }
+  };
+
+  const setCookie = (name, value, days = 365) => {
+    let expires = '';
+    if (days) {
+      const date = new Date();
+      date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+      expires = '; expires=' + date.toUTCString();
+    }
+    document.cookie = name + '=' + encodeURIComponent(value) + expires + '; path=/';
+  };
+
+  const deleteCookie = (name) => {
+    document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+  };
+
+  const clearCookies = () => {
+    document.cookie.split(';').forEach(cookie => {
+      const name = cookie.split('=')[0].trim();
+      deleteCookie(name);
+    });
+  };
+
+  const applyCustomCSS = (css) => {
+    // Remover CSS anterior se existir
+    removeCustomCSS();
     
-    if (state.consoleOpen) {
-      uiElements.consolePanel.style.display = 'flex';
-      logToConsole('Console aberto. Os logs serão exibidos aqui.');
+    // Criar nova tag de estilo
+    const style = document.createElement('style');
+    style.id = 'fox-devtools-custom-css';
+    style.textContent = css;
+    document.head.appendChild(style);
+  };
+
+  const removeCustomCSS = () => {
+    const existingStyle = document.getElementById('fox-devtools-custom-css');
+    if (existingStyle) {
+      existingStyle.remove();
+    }
+  };
+
+  const updatePerformanceMetrics = () => {
+    const now = performance.now();
+    const metrics = FoxDevTools.settings.performanceMetrics;
+    
+    // Tempo de carregamento
+    if (!metrics.domContentLoaded && document.readyState === 'complete') {
+      metrics.domContentLoaded = now - metrics.startTime;
+      FoxDevTools.elements.performance.querySelector('[data-metric="dom"]').textContent = 
+        Math.round(metrics.domContentLoaded) + 'ms';
+    }
+    
+    // Tempo total (aproximado)
+    FoxDevTools.elements.performance.querySelector('[data-metric="runtime"]').textContent = 
+      Math.round(now - metrics.startTime) + 'ms';
+    
+    // FPS (estimativa simples)
+    if (!FoxDevTools.lastFrameTime) {
+      FoxDevTools.lastFrameTime = now;
+      FoxDevTools.frameCount = 0;
     } else {
-      uiElements.consolePanel.style.display = 'none';
-    }
-    
-    updateButtonStates();
-  }
-
-  // Mostra o menu de ações automáticas
-  function showActionsMenu() {
-    const menu = document.createElement('div');
-    menu.className = 'actions-menu';
-    
-    menu.innerHTML = `
-      <h3>Ações Automáticas</h3>
-      <button id="fox-auto-click">${state.autoClicking ? '🛑 Parar' : '🖱️'} Clicks Automáticos</button>
-      <button id="fox-auto-scroll">${state.autoScrolling ? '🛑 Parar' : '📜'} Scroll Automático</button>
-      <button id="fox-show-links">🔗 Mostrar Links</button>
-      <button class="close">Fechar</button>
-    `;
-    
-    // Adiciona eventos
-    menu.querySelector('#fox-auto-click').addEventListener('click', () => {
-      state.autoClicking = !state.autoClicking;
-      if (state.autoClicking) {
-        startAutoClicking();
-        logToConsole('Clicks automáticos iniciados (a cada 2 segundos)');
-      } else {
-        logToConsole('Clicks automáticos parados');
+      FoxDevTools.frameCount++;
+      if (now - FoxDevTools.lastFrameTime >= 1000) {
+        const fps = Math.round((FoxDevTools.frameCount * 1000) / (now - FoxDevTools.lastFrameTime));
+        FoxDevTools.elements.performance.querySelector('[data-metric="fps"]').textContent = fps;
+        FoxDevTools.lastFrameTime = now;
+        FoxDevTools.frameCount = 0;
       }
-      menu.remove();
-    });
+    }
+  };
+
+  const startLogCapture = () => {
+    // Salvar referências originais
+    FoxDevTools.originalConsole = {
+      log: console.log,
+      info: console.info,
+      warn: console.warn,
+      error: console.error
+    };
     
-    menu.querySelector('#fox-auto-scroll').addEventListener('click', () => {
-      state.autoScrolling = !state.autoScrolling;
-      if (state.autoScrolling) {
-        startAutoScrolling();
-        logToConsole('Scroll automático iniciado');
-      } else {
-        logToConsole('Scroll automático parado');
+    // Sobrescrever métodos do console
+    console.log = function() {
+      FoxDevTools.originalConsole.log.apply(console, arguments);
+      logToConsole(Array.from(arguments).join(' '), 'log');
+    };
+    
+    console.info = function() {
+      FoxDevTools.originalConsole.info.apply(console, arguments);
+      logToConsole(Array.from(arguments).join(' '), 'info');
+    };
+    
+    console.warn = function() {
+      FoxDevTools.originalConsole.warn.apply(console, arguments);
+      logToConsole(Array.from(arguments).join(' '), 'warn');
+    };
+    
+    console.error = function() {
+      FoxDevTools.originalConsole.error.apply(console, arguments);
+      logToConsole(Array.from(arguments).join(' '), 'error');
+    };
+    
+    // Capturar erros globais
+    FoxDevTools.originalErrorHandler = window.onerror;
+    window.onerror = function(message, source, lineno, colno, error) {
+      logToConsole(`${message} (${source}:${lineno}:${colno})`, 'error');
+      if (FoxDevTools.originalErrorHandler) {
+        return FoxDevTools.originalErrorHandler(message, source, lineno, colno, error);
       }
-      menu.remove();
+    };
+  };
+
+  const stopLogCapture = () => {
+    // Restaurar métodos originais
+    if (FoxDevTools.originalConsole) {
+      console.log = FoxDevTools.originalConsole.log;
+      console.info = FoxDevTools.originalConsole.info;
+      console.warn = FoxDevTools.originalConsole.warn;
+      console.error = FoxDevTools.originalConsole.error;
+    }
+    
+    // Restaurar handler de erros
+    if (FoxDevTools.originalErrorHandler) {
+      window.onerror = FoxDevTools.originalErrorHandler;
+    }
+  };
+
+  const executeShortcut = (action) => {
+    switch (action) {
+      case 'scroll-top':
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        logToConsole('Rolado para o topo da página', 'info');
+        break;
+      case 'reload':
+        location.reload();
+        break;
+      case 'inject-jquery':
+        if (typeof jQuery === 'undefined') {
+          const script = document.createElement('script');
+          script.src = 'https://code.jquery.com/jquery-3.6.0.min.js';
+          script.onload = () => logToConsole('jQuery injetado com sucesso', 'info');
+          script.onerror = () => logToConsole('Falha ao injetar jQuery', 'error');
+          document.head.appendChild(script);
+        } else {
+          logToConsole('jQuery já está disponível', 'info');
+        }
+        break;
+      case 'disable-scripts':
+        document.querySelectorAll('script').forEach(script => {
+          if (!script.src && script.textContent) {
+            script.textContent = '';
+          } else if (script.src) {
+            script.remove();
+          }
+        });
+        logToConsole('Todos os scripts da página foram desativados', 'info');
+        break;
+      case 'copy-html':
+        if (FoxDevTools.lastInspectedElement) {
+          navigator.clipboard.writeText(FoxDevTools.lastInspectedElement.outerHTML)
+            .then(() => logToConsole('HTML copiado para a área de transferência', 'info'))
+            .catch(() => logToConsole('Falha ao copiar HTML', 'error'));
+        } else {
+          logToConsole('Nenhum elemento inspecionado recentemente', 'warn');
+        }
+        break;
+    }
+  };
+
+  const rotateScreen = (orientation) => {
+    const body = document.body;
+    
+    // Resetar transformações anteriores
+    body.style.transform = '';
+    body.style.width = '';
+    body.style.height = '';
+    body.style.margin = '';
+    
+    switch (orientation) {
+      case 'left':
+        body.style.transform = 'rotate(-90deg)';
+        body.style.transformOrigin = 'center center';
+        body.style.width = '100vh';
+        body.style.height = '100vw';
+        body.style.margin = `calc((100vh - 100vw) / 2) calc((100vw - 100vh) / 2)`;
+        logToConsole('Tela girada para a esquerda', 'info');
+        break;
+      case 'right':
+        body.style.transform = 'rotate(90deg)';
+        body.style.transformOrigin = 'center center';
+        body.style.width = '100vh';
+        body.style.height = '100vw';
+        body.style.margin = `calc((100vh - 100vw) / 2) calc((100vw - 100vh) / 2)`;
+        logToConsole('Tela girada para a direita', 'info');
+        break;
+      case 'upside':
+        body.style.transform = 'rotate(180deg)';
+        logToConsole('Tela invertida', 'info');
+        break;
+      case 'reset':
+        default:
+        logToConsole('Orientação da tela restaurada', 'info');
+        break;
+    }
+  };
+
+  const toggleTheme = () => {
+    const panel = FoxDevTools.elements.panel;
+    panel.classList.toggle('light');
+    
+    const newTheme = panel.classList.contains('light') ? 'light' : 'dark';
+    FoxDevTools.settings.theme = newTheme;
+    
+    // Salvar preferência
+    localStorage.setItem('fox-devtools-theme', newTheme);
+    logToConsole(`Tema alterado para ${newTheme}`, 'info');
+  };
+
+  // Inicialização
+  const init = () => {
+    if (FoxDevTools.initialized) return;
+    
+    // Carregar recursos
+    loadResources();
+    
+    // Criar UI
+    createUI();
+    
+    // Configurar eventos
+    setupEvents();
+    
+    // Carregar tema salvo
+    const savedTheme = localStorage.getItem('fox-devtools-theme');
+    if (savedTheme === 'light') {
+      FoxDevTools.elements.panel.classList.add('light');
+      FoxDevTools.settings.theme = 'light';
+    }
+    
+    // Iniciar métricas de desempenho
+    updatePerformanceMetrics();
+    setInterval(updatePerformanceMetrics, 1000);
+    
+    // Capturar eventos de carregamento da página
+    document.addEventListener('DOMContentLoaded', () => {
+      const time = performance.now() - FoxDevTools.settings.performanceMetrics.startTime;
+      FoxDevTools.settings.performanceMetrics.domContentLoaded = time;
+      FoxDevTools.elements.performance.querySelector('[data-metric="dom"]').textContent = 
+        Math.round(time) + 'ms';
     });
     
-    menu.querySelector('#fox-show-links').addEventListener('click', () => {
-      showAllLinks();
-      menu.remove();
+    window.addEventListener('load', () => {
+      const time = performance.now() - FoxDevTools.settings.performanceMetrics.startTime;
+      FoxDevTools.settings.performanceMetrics.loadTime = time;
+      FoxDevTools.elements.performance.querySelector('[data-metric="load"]').textContent = 
+        Math.round(time) + 'ms';
     });
     
-    menu.querySelector('.close').addEventListener('click', () => {
-      menu.remove();
-    });
-    
-    document.body.appendChild(menu);
-  }
+    // Inicialização completa
+    FoxDevTools.initialized = true;
+    logToConsole('FoxDevTools inicializado', 'info');
+  };
 
-  // Inicia clicks automáticos
-  function startAutoClicking() {
-    if (!state.autoClicking) return;
-    
-    const buttons = document.querySelectorAll('button, a[href], input[type="submit"], input[type="button"]');
-    if (buttons.length > 0) {
-      const randomIndex = Math.floor(Math.random() * buttons.length);
-      buttons[randomIndex].click();
-      logToConsole(`Click automático em: ${buttons[randomIndex].tagName} ${buttons[randomIndex].innerText || buttons[randomIndex].value || buttons[randomIndex].getAttribute('href') || ''}`);
-    }
-    
-    setTimeout(startAutoClicking, 2000);
+  // Iniciar quando o DOM estiver pronto
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(init, 1);
+  } else {
+    document.addEventListener('DOMContentLoaded', init);
   }
-
-  // Inicia scroll automático
-  function startAutoScrolling() {
-    if (!state.autoScrolling) return;
-    
-    const scrollStep = 50;
-    const currentPosition = window.pageYOffset;
-    const maxPosition = document.body.scrollHeight - window.innerHeight;
-    
-    if (currentPosition < maxPosition) {
-      window.scrollBy(0, scrollStep);
-      setTimeout(startAutoScrolling, 100);
-    } else {
-      state.autoScrolling = false;
-      logToConsole('Scroll automático concluído (fim da página alcançado)');
-    }
-  }
-
-  // Mostra todos os links da página
-  function showAllLinks() {
-    const links = Array.from(document.querySelectorAll('a[href]'));
-    const linksInfo = links.map(link => {
-      return `- ${link.innerText.trim() || '(sem texto)'}\n  ${link.href}`;
-    }).join('\n\n');
-    
-    if (linksInfo) {
-      alert(`LINKS ENCONTRADOS (${links.length}):\n\n${linksInfo}`);
-      logToConsole(`${links.length} links encontrados na página`);
-    } else {
-      alert('Nenhum link encontrado na página.');
-      logToConsole('Nenhum link encontrado na página');
-    }
-  }
-
-  // Desbloqueia o site
-  function unlockSite() {
-    document.body.oncontextmenu = null;
-    document.body.onselectstart = null;
-    document.oncontextmenu = null;
-    document.onselectstart = null;
-    
-    // Permite seleção de texto e menu de contexto
-    document.body.style.userSelect = 'auto';
-    document.body.style.webkitUserSelect = 'auto';
-    
-    logToConsole('Site desbloqueado: copiar, colar e menu de contexto habilitados');
-    alert('Site desbloqueado!\nAgora você pode copiar, colar e usar o menu de contexto.');
-  }
-
-  // Limpa todas as alterações
-  function clearChanges() {
-    state.modifiedElements.forEach(element => {
-      if (element.parentNode) {
-        element.style.backgroundColor = '';
-      }
-    });
-    
-    // Remove elementos que foram deletados do array
-    state.modifiedElements = state.modifiedElements.filter(el => el.parentNode);
-    
-    logToConsole('Todas as alterações visuais foram revertidas');
-    alert('Alterações visuais revertidas com sucesso!');
-  }
-
-  // Atualiza o estado dos botões
-  function updateButtonStates() {
-    if (!uiElements.panel) return;
-    
-    const inspectBtn = uiElements.panel.querySelector('#fox-inspect-btn');
-    const consoleBtn = uiElements.panel.querySelector('#fox-console-btn');
-    
-    if (inspectBtn) {
-      inspectBtn.textContent = state.inspecting ? '🔍 Parar Inspeção' : '🔍 Inspecionar Elementos';
-      inspectBtn.style.backgroundColor = state.inspecting ? config.primaryColor : config.secondaryColor;
-    }
-    
-    if (consoleBtn) {
-      consoleBtn.textContent = state.consoleOpen ? '📋 Fechar Console' : '📋 Console';
-    }
-  }
-
-  // Registra mensagens no console visual
-  function logToConsole(message, type = 'log') {
-    if (!uiElements.consolePanel) return;
-    
-    const consoleContent = document.getElementById('fox-console-content');
-    if (!consoleContent) return;
-    
-    const timestamp = new Date().toLocaleTimeString();
-    let messageElement = document.createElement('div');
-    
-    // Estiliza de acordo com o tipo de mensagem
-    switch (type) {
-      case 'error':
-        messageElement.style.color = '#ff6b6b';
-        break;
-      case 'warn':
-        messageElement.style.color = '#feca57';
-        break;
-      case 'info':
-        messageElement.style.color = '#48dbfb';
-        break;
-      case 'result':
-        messageElement.style.color = '#1dd1a1';
-        break;
-      case 'user':
-        messageElement.style.color = '#6a5acd';
-        break;
-      default:
-        messageElement.style.color = '#e0e0e0';
-    }
-    
-    messageElement.textContent = `[${timestamp}] ${message}`;
-    consoleContent.appendChild(messageElement);
-    
-    // Auto-scroll para a última mensagem
-    consoleContent.scrollTop = consoleContent.scrollHeight;
-    
-    // Também registra no console real para depuração
-    if (typeof console !== 'undefined') {
-      console[type](message);
-    }
-  }
-
-  // Sobrescreve o console.log padrão para capturar logs
-  function overrideConsoleLogs() {
-    if (typeof console !== 'undefined') {
-      const originalLog = console.log;
-      const originalError = console.error;
-      const originalWarn = console.warn;
-      const originalInfo = console.info;
-      
-      console.log = function() {
-        logToConsole(Array.from(arguments).join(' '), 'log');
-        originalLog.apply(console, arguments);
-      };
-      
-      console.error = function() {
-        logToConsole(Array.from(arguments).join(' '), 'error');
-        originalError.apply(console, arguments);
-      };
-      
-      console.warn = function() {
-        logToConsole(Array.from(arguments).join(' '), 'warn');
-        originalWarn.apply(console, arguments);
-      };
-      
-      console.info = function() {
-        logToConsole(Array.from(arguments).join(' '), 'info');
-        originalInfo.apply(console, arguments);
-      };
-    }
-  }
-
-  // Inicializa a ferramenta
-  initFoxDevTools();
-  overrideConsoleLogs();
 })();
